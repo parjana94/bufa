@@ -8,6 +8,7 @@ import TransactionsPage from "./pages/TransactionsPage"
 import {
   addShopTransaction,
   deleteShopTransaction,
+  resetAllData,
   saveInitialBalances,
   subscribeToSetup,
   subscribeToTransactions,
@@ -54,6 +55,7 @@ function App() {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
+  const [isResetting, setIsResetting] = useState(false)
 
   useEffect(() => {
     let finished = false
@@ -121,6 +123,21 @@ function App() {
     }
   }
 
+  async function handleResetData() {
+    try {
+      setIsResetting(true)
+      setLoadError("")
+      console.log("[App] Resetting all app data")
+      await resetAllData()
+      console.log("[App] App data reset complete")
+    } catch (error) {
+      console.error("[App] Failed to reset app data", error)
+      setLoadError(error?.message || "Failed to reset app data.")
+    } finally {
+      setIsResetting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
@@ -146,7 +163,7 @@ function App() {
   const bankBalance = Number(setup.bankBalance) || 0
 
   return (
-    <Layout>
+    <Layout onReset={handleResetData} isResetting={isResetting}>
       {loadError && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {loadError}

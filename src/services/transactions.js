@@ -1,12 +1,14 @@
 import {
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from "firebase/firestore"
 import { db } from "../lib/firebase"
 
@@ -14,6 +16,7 @@ const SETTINGS_COLLECTION = "settings"
 const SETTINGS_DOC_ID = "main"
 const TRANSACTIONS_COLLECTION = "transactions"
 const CARD_FEE_RATE = 0.015
+const LOCAL_STORAGE_KEY = "shop-ledger-state"
 
 const settingsRef = db ? doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID) : null
 const transactionsRef = db ? collection(db, TRANSACTIONS_COLLECTION) : null
@@ -27,12 +30,43 @@ const listeners = {
   setup: new Set(),
   transactions: new Set(),
 }
+let forceLocalMode = !db
+
+function loadLocalState() {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    stateStore.settings = parsed?.settings ?? null
+    stateStore.transactions = Array.isArray(parsed?.transactions) ? parsed.transactions : []
+  } catch (error) {
+    console.warn("[Transactions] Failed to load local state cache", error)
+  }
+}
+
+function saveLocalState() {
+  try {
+    localStorage.setItem(
+      LOCAL_STORAGE_KEY,
+      JSON.stringify({
+        settings: stateStore.settings,
+        transactions: stateStore.transactions,
+      }),
+    )
+  } catch (error) {
+    console.warn("[Transactions] Failed to persist local state cache", error)
+  }
+}
+
+loadLocalState()
 
 function emitSetup() {
+  saveLocalState()
   listeners.setup.forEach((listener) => listener(stateStore.settings))
 }
 
 function emitTransactions() {
+  saveLocalState()
   listeners.transactions.forEach((listener) => listener([...stateStore.transactions]))
 }
 
@@ -112,8 +146,19 @@ function shouldFallbackToMock(error) {
   )
 }
 
+function isLocalMode() {
+  return !db || forceLocalMode
+}
+
+function enableForceLocalMode(reason, error) {
+  if (!forceLocalMode) {
+    console.warn(`[Transactions] Switching to forced local mode: ${reason}`, error)
+  }
+  forceLocalMode = true
+}
+
 export async function saveInitialBalances({ cashBalance, bankBalance }) {
-  if (!db) {
+  if (isLocalMode()) {
     stateStore.settings = {
       id: SETTINGS_DOC_ID,
       cashBalance: roundCurrency(toNumber(cashBalance)),
@@ -139,6 +184,7 @@ export async function saveInitialBalances({ cashBalance, bankBalance }) {
   } catch (error) {
     console.error("[Transactions] saveInitialBalances failed", error)
     if (!shouldFallbackToMock(error)) throw error
+    enableForceLocalMode("saveInitialBalances failed", error)
     stateStore.settings = {
       id: SETTINGS_DOC_ID,
       cashBalance: roundCurrency(toNumber(cashBalance)),
@@ -156,7 +202,7 @@ export async function addShopTransaction(input) {
   })
   const delta = calculateBalanceDelta(transactionPayload)
 
-  if (!db) {
+  if (isLocalMode()) {
     const currentSettings = stateStore.settings ?? {
       id: SETTINGS_DOC_ID,
       cashBalance: 0,
@@ -209,6 +255,7 @@ export async function addShopTransaction(input) {
   } catch (error) {
     console.error("[Transactions] addShopTransaction failed", error)
     if (!shouldFallbackToMock(error)) throw error
+    enableForceLocalMode("addShopTransaction failed", error)
     const currentSettings = stateStore.settings ?? {
       id: SETTINGS_DOC_ID,
       cashBalance: 0,
@@ -234,7 +281,7 @@ export async function addShopTransaction(input) {
 }
 
 export async function updateShopTransaction(id, updates) {
-  if (!db) {
+  if (isLocalMode()) {
     const existing = stateStore.transactions.find((item) => item.id === id)
     if (!existing) {
       throw new Error("Transaction no longer exists.")
@@ -298,6 +345,7 @@ export async function updateShopTransaction(id, updates) {
   } catch (error) {
     console.error("[Transactions] updateShopTransaction failed", error)
     if (!shouldFallbackToMock(error)) throw error
+    enableForceLocalMode("updateShopTransaction failed", error)
     const existing = stateStore.transactions.find((item) => item.id === id)
     if (!existing) {
       throw new Error("Transaction no longer exists.")
@@ -323,7 +371,7 @@ export async function updateShopTransaction(id, updates) {
 }
 
 export async function deleteShopTransaction(id) {
-  if (!db) {
+  if (isLocalMode()) {
     const existing = stateStore.transactions.find((item) => item.id === id)
     if (!existing) {
       return
@@ -375,6 +423,7 @@ export async function deleteShopTransaction(id) {
   } catch (error) {
     console.error("[Transactions] deleteShopTransaction failed", error)
     if (!shouldFallbackToMock(error)) throw error
+    enableForceLocalMode("deleteShopTransaction failed", error)
     const existing = stateStore.transactions.find((item) => item.id === id)
     if (!existing) return
     const currentSettings = stateStore.settings ?? {
@@ -395,11 +444,34 @@ export async function deleteShopTransaction(id) {
   }
 }
 
+export async function resetAllData() {
+  if (isLocalMode()) {
+    stateStore.settings = null
+    stateStore.transactions = []
+    emitSetup()
+    emitTransactions()
+    return
+  }
+
+  const batch = writeBatch(db)
+  const transactionsSnapshot = await getDocs(transactionsRef)
+  transactionsSnapshot.forEach((transactionDoc) => {
+    batch.delete(transactionDoc.ref)
+  })
+  batch.delete(settingsRef)
+  await batch.commit()
+
+  stateStore.settings = null
+  stateStore.transactions = []
+  emitSetup()
+  emitTransactions()
+}
+
 export function subscribeToSetup(callback, onError) {
   listeners.setup.add(callback)
   callback(stateStore.settings)
 
-  if (!db) {
+  if (isLocalMode()) {
     return () => {
       listeners.setup.delete(callback)
     }
@@ -408,6 +480,7 @@ export function subscribeToSetup(callback, onError) {
   const unsub = onSnapshot(
     settingsRef,
     (snapshot) => {
+      if (forceLocalMode) return
       stateStore.settings = snapshot.exists()
         ? {
             id: snapshot.id,
@@ -432,7 +505,7 @@ export function subscribeToTransactions(callback, onError) {
   listeners.transactions.add(callback)
   callback([...stateStore.transactions])
 
-  if (!db) {
+  if (isLocalMode()) {
     return () => {
       listeners.transactions.delete(callback)
     }
@@ -442,6 +515,7 @@ export function subscribeToTransactions(callback, onError) {
   const unsub = onSnapshot(
     transactionsQuery,
     (snapshot) => {
+      if (forceLocalMode) return
       stateStore.transactions = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
       emitTransactions()
     },
