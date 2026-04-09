@@ -23,15 +23,18 @@ export const isFirebaseConfigured = hasFirebaseConfig(firebaseConfig)
 let dbInstance = null
 
 if (!isFirebaseConfigured) {
-  console.warn("[Firebase] Missing VITE_FIREBASE_* env vars. Using local mock mode.")
+  console.warn("[Firebase] Missing VITE_FIREBASE_* env vars. The app requires a configured Firebase project for shared data.")
 } else {
   try {
     const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
     dbInstance = getFirestore(app)
     console.log("[Firebase] Firestore initialized successfully.")
   } catch (error) {
-    console.error("[Firebase] Failed to initialize Firestore. Falling back to mock mode.", error)
+    console.error("[Firebase] Failed to initialize Firestore.", error)
   }
 }
 
 export const db = dbInstance
+
+/** True when Firestore is reachable; all app data must go through this. */
+export const isFirestoreAvailable = isFirebaseConfigured && dbInstance !== null

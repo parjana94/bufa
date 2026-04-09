@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 import Layout from "./components/Layout"
+import { isFirestoreAvailable } from "./lib/firebase"
 import DashboardPage from "./pages/DashboardPage"
+import FirebaseConfigPage from "./pages/FirebaseConfigPage"
 import ReportsPage from "./pages/ReportsPage"
 import SetupPage from "./pages/SetupPage"
 import TransactionsPage from "./pages/TransactionsPage"
@@ -58,6 +60,8 @@ function App() {
   const [isResetting, setIsResetting] = useState(false)
 
   useEffect(() => {
+    if (!isFirestoreAvailable) return
+
     let finished = false
     console.log("[App] Starting initial data subscriptions")
 
@@ -111,6 +115,10 @@ function App() {
 
   const { totalIncome, totalExpenses } = useMemo(() => calculateTotals(transactions), [transactions])
   const monthlySummary = useMemo(() => buildMonthlySummary(transactions), [transactions])
+
+  if (!isFirestoreAvailable) {
+    return <FirebaseConfigPage />
+  }
 
   async function handleInitialSave(payload) {
     try {

@@ -87,6 +87,12 @@ This app uses:
   - `date` (YYYY-MM-DD)
   - timestamps (`createdAt`, `updatedAt`)
 
+### Multi-device sync
+
+All balances and transactions are stored **only in Firestore**. The app does not use `localStorage` for persistent business data, so phones, tablets, and desktops that use the same Firebase project see the same data. Real-time listeners (`onSnapshot`) refresh the UI when data changes.
+
+Configure **Firestore security rules** so clients are allowed to read/write the documents above (for a trusted shop device you might use project-specific rules; for production, prefer Firebase Authentication and user-scoped paths).
+
 ## Scripts
 
 - `npm run dev` - start dev server
@@ -102,7 +108,7 @@ The app reads Firebase config from Vite env variables.
 2. Fill all `VITE_FIREBASE_*` values
 3. Never commit `.env` to git
 
-The project automatically falls back to local in-memory mode if Firebase variables are missing, but production deployment should always use real Firebase values.
+If Firebase variables are missing or invalid, the app shows a configuration screen instead of storing data locally. Production deployments must set all `VITE_FIREBASE_*` values so every device uses the same Firestore database.
 
 ## Verify Build Before Deploy
 

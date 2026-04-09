@@ -16,11 +16,11 @@ const SETTINGS_COLLECTION = "settings"
 const SETTINGS_DOC_ID = "main"
 const TRANSACTIONS_COLLECTION = "transactions"
 const CARD_FEE_RATE = 0.015
-const LOCAL_STORAGE_KEY = "shop-ledger-state"
 
 const settingsRef = db ? doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID) : null
 const transactionsRef = db ? collection(db, TRANSACTIONS_COLLECTION) : null
 
+/** In-memory mirror of last Firestore snapshot (not persisted). Used for listener fan-out only. */
 const stateStore = {
   settings: null,
   transactions: [],
@@ -30,44 +30,21 @@ const listeners = {
   setup: new Set(),
   transactions: new Set(),
 }
-let forceLocalMode = !db
 
-function loadLocalState() {
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (!raw) return
-    const parsed = JSON.parse(raw)
-    stateStore.settings = parsed?.settings ?? null
-    stateStore.transactions = Array.isArray(parsed?.transactions) ? parsed.transactions : []
-  } catch (error) {
-    console.warn("[Transactions] Failed to load local state cache", error)
-  }
-}
-
-function saveLocalState() {
-  try {
-    localStorage.setItem(
-      LOCAL_STORAGE_KEY,
-      JSON.stringify({
-        settings: stateStore.settings,
-        transactions: stateStore.transactions,
-      }),
-    )
-  } catch (error) {
-    console.warn("[Transactions] Failed to persist local state cache", error)
-  }
-}
-
-loadLocalState()
-
-function emitSetup() {
-  saveLocalState()
+function notifySetup() {
   listeners.setup.forEach((listener) => listener(stateStore.settings))
 }
 
-function emitTransactions() {
-  saveLocalState()
+function notifyTransactions() {
   listeners.transactions.forEach((listener) => listener([...stateStore.transactions]))
+}
+
+function assertDb() {
+  if (!db || !settingsRef || !transactionsRef) {
+    throw new Error(
+      "Firebase Firestore is not configured. Set all VITE_FIREBASE_* variables in your environment.",
+    )
+  }
 }
 
 function toNumber(value) {
@@ -136,323 +113,123 @@ function todayISO() {
   return new Date().toISOString().split("T")[0]
 }
 
-function shouldFallbackToMock(error) {
-  const code = error?.code || ""
-  return (
-    code.includes("permission-denied") ||
-    code.includes("failed-precondition") ||
-    code.includes("unavailable") ||
-    code.includes("unimplemented")
+export async function saveInitialBalances({ cashBalance, bankBalance }) {
+  assertDb()
+  await setDoc(
+    settingsRef,
+    {
+      cashBalance: roundCurrency(toNumber(cashBalance)),
+      bankBalance: roundCurrency(toNumber(bankBalance)),
+      initialized: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
   )
 }
 
-function isLocalMode() {
-  return !db || forceLocalMode
-}
-
-function enableForceLocalMode(reason, error) {
-  if (!forceLocalMode) {
-    console.warn(`[Transactions] Switching to forced local mode: ${reason}`, error)
-  }
-  forceLocalMode = true
-}
-
-export async function saveInitialBalances({ cashBalance, bankBalance }) {
-  if (isLocalMode()) {
-    stateStore.settings = {
-      id: SETTINGS_DOC_ID,
-      cashBalance: roundCurrency(toNumber(cashBalance)),
-      bankBalance: roundCurrency(toNumber(bankBalance)),
-      initialized: true,
-    }
-    emitSetup()
-    return
-  }
-
-  try {
-    await setDoc(
-      settingsRef,
-      {
-        cashBalance: roundCurrency(toNumber(cashBalance)),
-        bankBalance: roundCurrency(toNumber(bankBalance)),
-        initialized: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
-  } catch (error) {
-    console.error("[Transactions] saveInitialBalances failed", error)
-    if (!shouldFallbackToMock(error)) throw error
-    enableForceLocalMode("saveInitialBalances failed", error)
-    stateStore.settings = {
-      id: SETTINGS_DOC_ID,
-      cashBalance: roundCurrency(toNumber(cashBalance)),
-      bankBalance: roundCurrency(toNumber(bankBalance)),
-      initialized: true,
-    }
-    emitSetup()
-  }
-}
-
 export async function addShopTransaction(input) {
+  assertDb()
   const transactionPayload = normalizeTransactionInput({
     ...input,
     date: todayISO(),
   })
   const delta = calculateBalanceDelta(transactionPayload)
 
-  if (isLocalMode()) {
-    const currentSettings = stateStore.settings ?? {
-      id: SETTINGS_DOC_ID,
-      cashBalance: 0,
-      bankBalance: 0,
-      initialized: true,
-    }
+  await runTransaction(db, async (tx) => {
+    const settingsSnap = await tx.get(settingsRef)
+    const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { cashBalance: 0, bankBalance: 0 }
     const nextBalances = applyDelta(currentSettings, delta)
-    stateStore.settings = {
-      ...currentSettings,
-      ...nextBalances,
-      initialized: true,
-    }
 
-    stateStore.transactions = [
+    tx.set(
+      settingsRef,
       {
-        id: `mock-${Date.now()}`,
-        ...transactionPayload,
-      },
-      ...stateStore.transactions,
-    ]
-
-    emitSetup()
-    emitTransactions()
-    return
-  }
-
-  try {
-    await runTransaction(db, async (tx) => {
-      const settingsSnap = await tx.get(settingsRef)
-      const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { cashBalance: 0, bankBalance: 0 }
-      const nextBalances = applyDelta(currentSettings, delta)
-
-      tx.set(
-        settingsRef,
-        {
-          ...nextBalances,
-          initialized: true,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      )
-
-      const newTransactionRef = doc(transactionsRef)
-      tx.set(newTransactionRef, {
-        ...transactionPayload,
-        createdAt: serverTimestamp(),
+        ...nextBalances,
+        initialized: true,
         updatedAt: serverTimestamp(),
-      })
-    })
-  } catch (error) {
-    console.error("[Transactions] addShopTransaction failed", error)
-    if (!shouldFallbackToMock(error)) throw error
-    enableForceLocalMode("addShopTransaction failed", error)
-    const currentSettings = stateStore.settings ?? {
-      id: SETTINGS_DOC_ID,
-      cashBalance: 0,
-      bankBalance: 0,
-      initialized: true,
-    }
-    const nextBalances = applyDelta(currentSettings, delta)
-    stateStore.settings = {
-      ...currentSettings,
-      ...nextBalances,
-      initialized: true,
-    }
-    stateStore.transactions = [
-      {
-        id: `mock-${Date.now()}`,
-        ...transactionPayload,
       },
-      ...stateStore.transactions,
-    ]
-    emitSetup()
-    emitTransactions()
-  }
+      { merge: true },
+    )
+
+    const newTransactionRef = doc(transactionsRef)
+    tx.set(newTransactionRef, {
+      ...transactionPayload,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  })
 }
 
 export async function updateShopTransaction(id, updates) {
-  if (isLocalMode()) {
-    const existing = stateStore.transactions.find((item) => item.id === id)
-    if (!existing) {
-      throw new Error("Transaction no longer exists.")
-    }
-    const merged = normalizeTransactionInput({ ...existing, ...updates })
-    const currentSettings = stateStore.settings ?? {
-      id: SETTINGS_DOC_ID,
-      cashBalance: 0,
-      bankBalance: 0,
-      initialized: true,
-    }
-    const removeOld = invertDelta(calculateBalanceDelta(existing))
-    const applyNew = calculateBalanceDelta(merged)
-    stateStore.settings = {
-      ...currentSettings,
-      ...applyDelta(applyDelta(currentSettings, removeOld), applyNew),
-      initialized: true,
-    }
-    stateStore.transactions = stateStore.transactions.map((item) => (item.id === id ? { ...item, ...merged } : item))
-    emitSetup()
-    emitTransactions()
-    return
-  }
-
+  assertDb()
   const transactionRef = doc(db, TRANSACTIONS_COLLECTION, id)
 
-  try {
-    await runTransaction(db, async (tx) => {
-      const settingsSnap = await tx.get(settingsRef)
-      const transactionSnap = await tx.get(transactionRef)
-      if (!transactionSnap.exists()) {
-        throw new Error("Transaction no longer exists.")
-      }
-
-      const currentTransaction = transactionSnap.data()
-      const mergedTransaction = normalizeTransactionInput({
-        ...currentTransaction,
-        ...updates,
-      })
-
-      const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { cashBalance: 0, bankBalance: 0 }
-      const removeOld = invertDelta(calculateBalanceDelta(currentTransaction))
-      const applyNew = calculateBalanceDelta(mergedTransaction)
-      const nextBalances = applyDelta(applyDelta(currentSettings, removeOld), applyNew)
-
-      tx.set(
-        settingsRef,
-        {
-          ...nextBalances,
-          initialized: true,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      )
-
-      tx.update(transactionRef, {
-        ...mergedTransaction,
-        updatedAt: serverTimestamp(),
-      })
-    })
-  } catch (error) {
-    console.error("[Transactions] updateShopTransaction failed", error)
-    if (!shouldFallbackToMock(error)) throw error
-    enableForceLocalMode("updateShopTransaction failed", error)
-    const existing = stateStore.transactions.find((item) => item.id === id)
-    if (!existing) {
+  await runTransaction(db, async (tx) => {
+    const settingsSnap = await tx.get(settingsRef)
+    const transactionSnap = await tx.get(transactionRef)
+    if (!transactionSnap.exists()) {
       throw new Error("Transaction no longer exists.")
     }
-    const merged = normalizeTransactionInput({ ...existing, ...updates })
-    const currentSettings = stateStore.settings ?? {
-      id: SETTINGS_DOC_ID,
-      cashBalance: 0,
-      bankBalance: 0,
-      initialized: true,
-    }
-    const removeOld = invertDelta(calculateBalanceDelta(existing))
-    const applyNew = calculateBalanceDelta(merged)
-    stateStore.settings = {
-      ...currentSettings,
-      ...applyDelta(applyDelta(currentSettings, removeOld), applyNew),
-      initialized: true,
-    }
-    stateStore.transactions = stateStore.transactions.map((item) => (item.id === id ? { ...item, ...merged } : item))
-    emitSetup()
-    emitTransactions()
-  }
+
+    const currentTransaction = transactionSnap.data()
+    const mergedTransaction = normalizeTransactionInput({
+      ...currentTransaction,
+      ...updates,
+    })
+
+    const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { cashBalance: 0, bankBalance: 0 }
+    const removeOld = invertDelta(calculateBalanceDelta(currentTransaction))
+    const applyNew = calculateBalanceDelta(mergedTransaction)
+    const nextBalances = applyDelta(applyDelta(currentSettings, removeOld), applyNew)
+
+    tx.set(
+      settingsRef,
+      {
+        ...nextBalances,
+        initialized: true,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+
+    tx.update(transactionRef, {
+      ...mergedTransaction,
+      updatedAt: serverTimestamp(),
+    })
+  })
 }
 
 export async function deleteShopTransaction(id) {
-  if (isLocalMode()) {
-    const existing = stateStore.transactions.find((item) => item.id === id)
-    if (!existing) {
-      return
-    }
-    const currentSettings = stateStore.settings ?? {
-      id: SETTINGS_DOC_ID,
-      cashBalance: 0,
-      bankBalance: 0,
-      initialized: true,
-    }
-    const reverseDelta = invertDelta(calculateBalanceDelta(existing))
-    stateStore.settings = {
-      ...currentSettings,
-      ...applyDelta(currentSettings, reverseDelta),
-      initialized: true,
-    }
-    stateStore.transactions = stateStore.transactions.filter((item) => item.id !== id)
-    emitSetup()
-    emitTransactions()
-    return
-  }
-
+  assertDb()
   const transactionRef = doc(db, TRANSACTIONS_COLLECTION, id)
 
-  try {
-    await runTransaction(db, async (tx) => {
-      const settingsSnap = await tx.get(settingsRef)
-      const transactionSnap = await tx.get(transactionRef)
-      if (!transactionSnap.exists()) {
-        return
-      }
-
-      const existingTransaction = transactionSnap.data()
-      const reverseDelta = invertDelta(calculateBalanceDelta(existingTransaction))
-      const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { cashBalance: 0, bankBalance: 0 }
-      const nextBalances = applyDelta(currentSettings, reverseDelta)
-
-      tx.set(
-        settingsRef,
-        {
-          ...nextBalances,
-          initialized: true,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      )
-      tx.delete(transactionRef)
-    })
-  } catch (error) {
-    console.error("[Transactions] deleteShopTransaction failed", error)
-    if (!shouldFallbackToMock(error)) throw error
-    enableForceLocalMode("deleteShopTransaction failed", error)
-    const existing = stateStore.transactions.find((item) => item.id === id)
-    if (!existing) return
-    const currentSettings = stateStore.settings ?? {
-      id: SETTINGS_DOC_ID,
-      cashBalance: 0,
-      bankBalance: 0,
-      initialized: true,
+  await runTransaction(db, async (tx) => {
+    const settingsSnap = await tx.get(settingsRef)
+    const transactionSnap = await tx.get(transactionRef)
+    if (!transactionSnap.exists()) {
+      return
     }
-    const reverseDelta = invertDelta(calculateBalanceDelta(existing))
-    stateStore.settings = {
-      ...currentSettings,
-      ...applyDelta(currentSettings, reverseDelta),
-      initialized: true,
-    }
-    stateStore.transactions = stateStore.transactions.filter((item) => item.id !== id)
-    emitSetup()
-    emitTransactions()
-  }
+
+    const existingTransaction = transactionSnap.data()
+    const reverseDelta = invertDelta(calculateBalanceDelta(existingTransaction))
+    const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { cashBalance: 0, bankBalance: 0 }
+    const nextBalances = applyDelta(currentSettings, reverseDelta)
+
+    tx.set(
+      settingsRef,
+      {
+        ...nextBalances,
+        initialized: true,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+    tx.delete(transactionRef)
+  })
 }
 
 export async function resetAllData() {
-  if (isLocalMode()) {
-    stateStore.settings = null
-    stateStore.transactions = []
-    emitSetup()
-    emitTransactions()
-    return
-  }
-
+  assertDb()
   const batch = writeBatch(db)
   const transactionsSnapshot = await getDocs(transactionsRef)
   transactionsSnapshot.forEach((transactionDoc) => {
@@ -460,34 +237,29 @@ export async function resetAllData() {
   })
   batch.delete(settingsRef)
   await batch.commit()
-
-  stateStore.settings = null
-  stateStore.transactions = []
-  emitSetup()
-  emitTransactions()
 }
 
 export function subscribeToSetup(callback, onError) {
+  if (!db || !settingsRef) {
+    const err = new Error("Firebase Firestore is not configured. Set all VITE_FIREBASE_* variables.")
+    console.error("[Transactions]", err.message)
+    if (onError) onError(err)
+    return () => {}
+  }
+
   listeners.setup.add(callback)
   callback(stateStore.settings)
-
-  if (isLocalMode()) {
-    return () => {
-      listeners.setup.delete(callback)
-    }
-  }
 
   const unsub = onSnapshot(
     settingsRef,
     (snapshot) => {
-      if (forceLocalMode) return
       stateStore.settings = snapshot.exists()
         ? {
             id: snapshot.id,
             ...snapshot.data(),
           }
         : null
-      emitSetup()
+      notifySetup()
     },
     (error) => {
       console.error("[Transactions] Setup subscription failed", error)
@@ -502,22 +274,22 @@ export function subscribeToSetup(callback, onError) {
 }
 
 export function subscribeToTransactions(callback, onError) {
+  if (!db || !transactionsRef) {
+    const err = new Error("Firebase Firestore is not configured. Set all VITE_FIREBASE_* variables.")
+    console.error("[Transactions]", err.message)
+    if (onError) onError(err)
+    return () => {}
+  }
+
   listeners.transactions.add(callback)
   callback([...stateStore.transactions])
-
-  if (isLocalMode()) {
-    return () => {
-      listeners.transactions.delete(callback)
-    }
-  }
 
   const transactionsQuery = query(transactionsRef, orderBy("date", "desc"), orderBy("createdAt", "desc"))
   const unsub = onSnapshot(
     transactionsQuery,
     (snapshot) => {
-      if (forceLocalMode) return
       stateStore.transactions = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
-      emitTransactions()
+      notifyTransactions()
     },
     (error) => {
       console.error("[Transactions] Transactions subscription failed", error)
