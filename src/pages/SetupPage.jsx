@@ -33,12 +33,12 @@ export default function SetupPage({ onSave }) {
     <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-4">
       <div className="w-full rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:p-6">
         <h1 className="text-xl font-semibold text-slate-900">Initial Setup</h1>
-        <p className="mt-1 text-sm text-slate-500">Enter your starting balances before tracking transactions.</p>
+        <p className="mt-1 text-sm text-slate-500">შეიყვანეთ საწყისი ნაღდის და საბანკო ანგარიშის თანხის ოდენობა.</p>
 
         <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="cash-balance">
-              Starting Cash Balance (₾)
+              საწყისი ქეშ თანხა(₾)
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">₾</span>
@@ -56,7 +56,7 @@ export default function SetupPage({ onSave }) {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="bank-balance">
-              Starting Bank Balance (₾)
+              საწყისი თანხა ბარათზე (₾)
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">₾</span>

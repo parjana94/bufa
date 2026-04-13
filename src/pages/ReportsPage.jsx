@@ -66,7 +66,7 @@ export default function ReportsPage({ transactions }) {
       <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-col gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Income & Expense Report</h2>
+            <h2 className="text-lg font-semibold text-slate-900">შემოსავლებისა და ხარჯების რეპორტი</h2>
             <p className="text-sm text-slate-500">Filter transactions by month or custom date range across months.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
@@ -110,15 +110,15 @@ export default function ReportsPage({ transactions }) {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <article className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-              <p className="text-xs text-slate-500">Income Total</p>
+              <p className="text-xs text-slate-500">შემოსავლის ჯამი</p>
               <p className="text-lg font-semibold text-emerald-700">{formatCurrency(totals.income)}</p>
             </article>
             <article className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-              <p className="text-xs text-slate-500">Expense Total</p>
+              <p className="text-xs text-slate-500">გასავლის ჯამი</p>
               <p className="text-lg font-semibold text-rose-700">{formatCurrency(totals.expense)}</p>
             </article>
             <article className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-              <p className="text-xs text-slate-500">Net (Income - Expense)</p>
+              <p className="text-xs text-slate-500">Net (შემოსავალი - გასავალი)</p>
               <p className="text-lg font-semibold text-slate-900">{formatCurrency(totals.income - totals.expense)}</p>
             </article>
           </div>
@@ -129,22 +129,22 @@ export default function ReportsPage({ transactions }) {
       </section>
 
       <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <h3 className="mb-3 text-base font-semibold text-slate-900">Monthly Breakdown</h3>
+        <h3 className="mb-3 text-base font-semibold text-slate-900">ყოველთვიური სტატისტიკა</h3>
         <MonthlyChart data={chartData} />
       </section>
 
       <section className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
         <div className="border-b border-slate-200 px-4 py-3">
-          <h3 className="text-base font-semibold text-slate-900">Expense Transactions</h3>
+          <h3 className="text-base font-semibold text-slate-900">გასავლის ტრანზაქციები</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-100 text-slate-600">
               <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Amount</th>
-                <th className="px-4 py-3 font-medium">Payment Method</th>
-                <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">სახელი</th>
+                <th className="px-4 py-3 font-medium">თანხა</th>
+                <th className="px-4 py-3 font-medium">გადახდის მეთოდი</th>
+                <th className="px-4 py-3 font-medium">თარიღი</th>
               </tr>
             </thead>
             <tbody>
@@ -164,16 +164,16 @@ export default function ReportsPage({ transactions }) {
 
       <section className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
         <div className="border-b border-slate-200 px-4 py-3">
-          <h3 className="text-base font-semibold text-slate-900">Income Transactions</h3>
+          <h3 className="text-base font-semibold text-slate-900">შემოსავლის ტრანზაქციები</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-100 text-slate-600">
               <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Amount</th>
-                <th className="px-4 py-3 font-medium">Payment Method</th>
-                <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">სახელი</th>
+                <th className="px-4 py-3 font-medium">თანხა</th>
+                <th className="px-4 py-3 font-medium">გადახდის მეთოდი</th>
+                <th className="px-4 py-3 font-medium">თარიღი</th>
               </tr>
             </thead>
             <tbody>

@@ -11,7 +11,7 @@ export default function DashboardPage({ cashBalance, bankBalance, totalIncome, t
         totalExpenses={totalExpenses}
       />
       <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <h2 className="mb-3 text-lg font-semibold text-slate-900">Monthly Summary</h2>
+        <h2 className="mb-3 text-lg font-semibold text-slate-900">ყოველთვიური შეჯამება</h2>
         <MonthlyChart data={monthlySummary} />
       </section>
     </main>

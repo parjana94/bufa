@@ -44,14 +44,14 @@ export default function TransactionList({ items, onEdit, onDelete }) {
                     onClick={() => setEditingId(item.id)}
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
                   >
-                    Edit
+                    ჩასწორება
                   </button>
                   <button
                     type="button"
                     onClick={() => onDelete(item.id)}
                     className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
                   >
-                    Delete
+                    წაშლა
                   </button>
                 </div>
               </div>

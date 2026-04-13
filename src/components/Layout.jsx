@@ -1,9 +1,9 @@
 import { NavLink } from "react-router-dom"
 
 const navItems = [
-  { to: "/", label: "Dashboard" },
-  { to: "/transactions", label: "Transactions" },
-  { to: "/reports", label: "Reports" },
+  { to: "/", label: "მთავარი" },
+  { to: "/transactions", label: "ტრანზაქციები" },
+  { to: "/reports", label: "რეპორტი" },
 ]
 
 function navClassName({ isActive }) {
@@ -23,8 +23,8 @@ export default function Layout({ children, onReset, isResetting }) {
       <header className="mb-6 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Shop Ledger</h1>
-            <p className="text-sm text-slate-500">Simple expense and income tracking</p>
+            <h1 className="text-xl font-semibold text-slate-900">ხარჯთაღრიცხვა </h1>
+            <p className="text-sm text-slate-500">შემოსავლისა და გასავლის აღწერა</p>
           </div>
           <nav className="flex flex-wrap items-center gap-2">
             {navItems.map((item) => (

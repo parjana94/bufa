@@ -79,14 +79,14 @@ export default function TransactionForm({ onSubmit, initialValues, submitLabel =
           onChange={(event) => handleTypeChange(event.target.value)}
           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none ring-slate-400 focus:ring"
         >
-          <option value="income">Income</option>
-          <option value="expense">Expense</option>
+          <option value="income">შემოსავალი</option>
+          <option value="expense">გასავალი</option>
         </select>
       </div>
 
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="description">
-          Name / Description
+          სახელი / აღწერა
         </label>
         <input
           id="description"
@@ -100,7 +100,7 @@ export default function TransactionForm({ onSubmit, initialValues, submitLabel =
 
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="amount">
-          Amount (₾)
+          რაოდენობა (₾)
         </label>
         <div className="relative">
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">₾</span>
@@ -119,7 +119,7 @@ export default function TransactionForm({ onSubmit, initialValues, submitLabel =
 
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="method">
-          Payment Method
+          გადახდის მეთოდი
         </label>
         <select
           id="method"
